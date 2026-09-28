@@ -12,6 +12,7 @@ import { runPalletOptimization, OPTIMIZER_STRATEGIES } from './utils/palletOptim
 import { t, conv, UNITS } from './utils/i18n';
 import './App.css';
 import { PalletAccessories3D } from "./components/PalletAccessories3D.jsx";
+import Papa from 'papaparse';
 
 const PALLET_SPECS = {
     eur: { name: 'EUR 1 (1200 x 800 mm)', width: 1200, length: 800, height: 144 },
@@ -283,6 +284,98 @@ export default function App() {
         setPackedData(null); // Force UI to reset Optimized Tab
     };
 
+    // ========================================================================
+    // AUTO-IMPORT INVENTORY FROM URL PARAMETERS
+    // ========================================================================
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const importData = params.get('import');
+
+        // Only run if there is data to import AND the database catalog has finished loading
+        if (importData && availableProducts.length > 0) {
+            const itemsToImport = importData.split(',');
+
+            setCargoList(prevCargoList => {
+                let newCargoList = [...prevCargoList];
+                let hasChanges = false;
+
+                itemsToImport.forEach(item => {
+                    const [sku, qtyStr] = item.split(':');
+                    const qty = parseInt(qtyStr, 10);
+
+                    if (sku && !isNaN(qty) && qty > 0) {
+                        const product = availableProducts.find(p => p.code === sku);
+
+                        if (product) {
+                            const existingIdx = newCargoList.findIndex(c => c.productCode === sku);
+
+                            // If it's already in the list, just add the quantity
+                            if (existingIdx >= 0) {
+                                newCargoList[existingIdx].quantity += qty;
+                                hasChanges = true;
+                            } else {
+                                // Construct the new item exactly like handleAddProduct does
+                                const box = product.standardBox || {};
+                                const profile = product.packagingProfile || {};
+                                const existingId = `prod-${product.id}`;
+
+                                const l = Number(box.length || profile.length) || 300;
+                                const w = Number(box.width || profile.width) || 200;
+                                const h = Number(box.height || profile.height) || 150;
+                                const wt = Number(product.box_weight || product.boxWeight || box.emptyWeight || profile.grossBoxWeight) || 1.0;
+                                const boxQtyVal = Number(product.box_qty ?? product.boxQty ?? profile.boxQty ?? 24);
+                                const renderType = boxQtyVal === 1 ? 'barrel' : 'box';
+
+                                const packType = product.packaging || profile.packagingType || '';
+                                const rawDrained = product.drained_weight ?? product.drainedWeight;
+                                const drainedStr = rawDrained ? (String(rawDrained).endsWith('g') ? rawDrained : `${rawDrained}g`) : '';
+                                const sortNum = product.sortOrder ?? product.sort_order;
+
+                                const displayName = [
+                                    sortNum != null ? sortNum : null,
+                                    product.sub_category || product.subCategory,
+                                    product.style,
+                                    product.flavor,
+                                    packType,
+                                    drainedStr
+                                ].filter(Boolean).join(' - ');
+
+                                newCargoList.push({
+                                    id: existingId,
+                                    cargoId: existingId,
+                                    name: displayName || sku,
+                                    productCode: product.code,
+                                    length: Math.max(10, l),
+                                    width: Math.max(10, w),
+                                    height: Math.max(10, h),
+                                    diameter: renderType === 'barrel' ? Math.min(w, l) : undefined,
+                                    weight: Math.max(0.1, wt),
+                                    quantity: qty,
+                                    type: renderType,
+                                    color: '#10b981', // Highlight imported items in green
+                                    isGlobal: true
+                                });
+                                hasChanges = true;
+                            }
+                        } else {
+                            console.warn(`URL Import: SKU ${sku} not found in database.`);
+                        }
+                    }
+                });
+
+                if (hasChanges) {
+                    setPackedData(null); // Force the optimizer to recognize new items
+
+                    // Wipe the import parameter from the URL address bar silently
+                    window.history.replaceState(null, '', window.location.pathname);
+                    return newCargoList;
+                }
+
+                return prevCargoList;
+            });
+        }
+    }, [availableProducts]);
+
     const handleAddStandardBox = () => {
         const box = availableBoxes.find(b => b.id === Number(selectedBoxId));
         if (!box) return;
@@ -371,6 +464,92 @@ export default function App() {
         const updated = cargoList.filter(item => item.id !== id);
         setCargoList(updated);
         setPackedData(null); // Always wipe stale packed data when items are removed
+    };
+
+    const handleFileUpload = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            complete: (results) => {
+                const importedData = results.data;
+                let newCargoList = [...cargoList];
+                let hasChanges = false;
+
+                importedData.forEach(row => {
+                    const sku = row.SKU?.trim();
+                    const qty = parseInt(row.Boxes, 10);
+
+                    if (sku && !isNaN(qty) && qty > 0) {
+                        hasChanges = true;
+
+                        const existingIdx = newCargoList.findIndex(c => c.productCode === sku);
+
+                        if (existingIdx >= 0) {
+                            newCargoList[existingIdx].quantity += qty;
+                        } else {
+                            const product = availableProducts.find(p => p.code === sku);
+
+                            if (product) {
+                                const box = product.standardBox || {};
+                                const profile = product.packagingProfile || {};
+                                const existingId = `prod-${product.id}`;
+
+                                const l = Number(box.length || profile.length) || 300;
+                                const w = Number(box.width || profile.width) || 200;
+                                const h = Number(box.height || profile.height) || 150;
+                                const wt = Number(product.box_weight || product.boxWeight || box.emptyWeight || profile.grossBoxWeight) || 1.0;
+                                const boxQtyVal = Number(product.box_qty ?? product.boxQty ?? profile.boxQty ?? 24);
+                                const renderType = boxQtyVal === 1 ? 'barrel' : 'box';
+
+                                // --- START NEW NAME LOGIC (Matches your manual add function) ---
+                                const packType = product.packaging || profile.packagingType || '';
+                                const rawDrained = product.drained_weight ?? product.drainedWeight;
+                                const drainedStr = rawDrained ? (String(rawDrained).endsWith('g') ? rawDrained : `${rawDrained}g`) : '';
+                                const sortNum = product.sortOrder ?? product.sort_order;
+
+                                const displayName = [
+                                    sortNum != null ? sortNum : null,
+                                    product.sub_category || product.subCategory,
+                                    product.style,
+                                    product.flavor,
+                                    packType,
+                                    drainedStr
+                                ].filter(Boolean).join(' - ');
+                                // --- END NEW NAME LOGIC ---
+
+                                newCargoList.push({
+                                    id: existingId,
+                                    cargoId: existingId,
+                                    name: displayName || sku, // Uses the full descriptive name
+                                    productCode: product.code,
+                                    length: Math.max(10, l),
+                                    width: Math.max(10, w),
+                                    height: Math.max(10, h),
+                                    diameter: renderType === 'barrel' ? Math.min(w, l) : undefined,
+                                    weight: Math.max(0.1, wt),
+                                    quantity: qty,
+                                    type: renderType,
+                                    color: '#10b981',
+                                    isGlobal: true
+                                });
+                            } else {
+                                console.warn(`CSV Import: SKU ${sku} not found in database.`);
+                            }
+                        }
+                    }
+                });
+
+                if (hasChanges) {
+                    setCargoList(newCargoList);
+                    setPackedData(null);
+                }
+
+                event.target.value = null;
+            }
+        });
     };
 
     // ========================================================================
@@ -818,6 +997,23 @@ export default function App() {
                             </div>
                             <button type="submit" className="btn-add" style={{ width: '100%', height: '28px', marginTop: '2px', backgroundColor: '#334155' }}>Create Item</button>
                         </form>
+
+                        {/* 4. Bulk CSV Import */}
+                        <div className="panel-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px dashed #10b981' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 600, color: '#10b981', textTransform: 'uppercase' }}>Bulk CSV Import</span>
+                            <div>
+                                <input
+                                    type="file"
+                                    accept=".csv"
+                                    id="csv-upload"
+                                    style={{ display: 'none' }}
+                                    onChange={handleFileUpload}
+                                />
+                                <label htmlFor="csv-upload" className="btn-add" style={{ cursor: 'pointer', padding: '4px 12px', background: '#059669', color: 'white', borderRadius: '4px', fontSize: '10px' }}>
+                                    Upload File
+                                </label>
+                            </div>
+                        </div>
 
                         {/* Added Items List */}
                         <div className="panel-card" style={{ flex: 1, overflowY: 'auto' }}>
