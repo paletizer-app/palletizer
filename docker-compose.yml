@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  # 1. SPRING BOOT BACKEND (Root folder)
+  backend:
+    build: .                 # Changed from ./backend to .
+    container_name: palletizer-api
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_DATASOURCE_URL=${SUPABASE_DB_URL}
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+
+  # 2. REACT FRONTEND (Sub-folder)
+  frontend:
+    build: ./frontend        # This stays the same
+    container_name: palletizer-ui
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend

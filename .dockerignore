@@ -1,0 +1,5 @@
+target
+.mvn
+.git
+*.log
+frontend/    <-- CRUCIAL: Prevents Java from copying React files!
