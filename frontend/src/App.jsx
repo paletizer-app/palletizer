@@ -22,6 +22,39 @@ const PALLET_SPECS = {
 
 const COLOR_PALETTE = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
 
+function LoadingOverlay({ isReady }) {
+    const [timeLeft, setTimeLeft] = useState(60);
+
+    useEffect(() => {
+        if (isReady) return;
+
+        const timer = setInterval(() => {
+            setTimeLeft((prev) => (prev > 0 ? prev - 1 : 0));
+        }, 1000);
+
+        return () => clearInterval(timer);
+    }, [isReady]);
+
+    if (isReady) return null;
+
+    return (
+        <div className="loading-overlay">
+            <div className="loading-content">
+                <div className="spinner"></div>
+                <h2>Wait for the Palletizer to load...</h2>
+                <p style={{ color: '#94a3b8', fontSize: '13px', margin: 0 }}>
+                    Waking up the server. Estimated time: <span style={{ color: '#38bdf8', fontWeight: 'bold' }}>{timeLeft}</span>s
+                </p>
+                {timeLeft === 0 && (
+                    <p style={{ color: '#f59e0b', marginTop: '12px', fontSize: '12px' }}>
+                        The server is taking a bit longer than usual, still trying...
+                    </p>
+                )}
+            </div>
+        </div>
+    );
+}
+
 export default function App() {
     const [lang, setLang] = useState('en');
     const [unit, setUnit] = useState(UNITS.METRIC);
@@ -833,6 +866,7 @@ export default function App() {
 
     return (
         <div className="app-container">
+            <LoadingOverlay isReady={!isLoadingProducts && !isLoadingBoxes} />
             {/* TABBED SIDEBAR */}
             <div className="sidebar">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '6px', borderBottom: '1px solid #334155' }}>
