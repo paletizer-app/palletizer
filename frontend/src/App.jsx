@@ -1065,6 +1065,18 @@ export default function App() {
                                 className="form-select"
                                 style={{ width: '100%', borderColor: '#38bdf8' }}
                             >
+                                <option value={OPTIMIZER_STRATEGIES.HORIZONTAL_GUILLOTINE}>
+                                    Horizontal 2D Guillotine
+                                </option>
+                                <option value={OPTIMIZER_STRATEGIES.WALL_BUILDING_GRASP}>
+                                    GRASP Metaheuristic Wall-Building
+                                </option>
+                                <option value={OPTIMIZER_STRATEGIES.MAXIMAL_GUILLOTINE}>
+                                    Advanced Subsumption Guillotine
+                                </option>
+                                <option value={OPTIMIZER_STRATEGIES.UNIFORM_BLOCK}>
+                                    Uniform Surface-Max Block Packer (Mixed-SKU Grouping)
+                                </option>
                                 <option value={OPTIMIZER_STRATEGIES.COLUMNAR_BLOCK}>
                                     Column-Block Pillar Packer (Retail Distribution Standard)
                                 </option>

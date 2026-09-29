@@ -65,7 +65,12 @@ public class SecurityConfig {
 
         // FIX: Use patterns to allow any local development port (like 5173, 3000, etc.)
         // This plays nicely with setAllowCredentials(true)
-        configuration.setAllowedOriginPatterns(Arrays.asList("*"));
+        configuration.setAllowedOrigins(Arrays.asList(
+                "http://localhost:3000",
+                "http://localhost:3001",
+                "http://localhost:5173",
+                "https://palletizer.paletizer-app.workers.dev/"
+        ));
 
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Accept"));
