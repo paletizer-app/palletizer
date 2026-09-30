@@ -69,6 +69,7 @@ export default function App() {
     const [minSupportFraction, setMinSupportFraction] = useState(75);
     const [visibleHeight, setVisibleHeight] = useState(1800);
     const [isAuthOpen, setIsAuthOpen] = useState(false);
+    const [isOptimizing, setIsOptimizing] = useState(false);
 
     const [accessories, setAccessories] = useState({
         useBottomSheet: false,
@@ -588,68 +589,11 @@ export default function App() {
     // ========================================================================
     // OPTIMIZATION AND POST-PROCESSING
     // ========================================================================
-    const applyAccessoriesToPallet = (rawResult, accessories) => {
-        if (!accessories || rawResult.placedItems.length === 0) return rawResult;
-
-        let currentYShift = 0;
-        const slipSheets = [];
-        const thickness = Number(accessories.sheetThickness) || 3;
-
-        const yLevels = Array.from(new Set(rawResult.placedItems.map(item => Math.round(item.y)))).sort((a, b) => a - b);
-        const yShiftsMap = {};
-
-        if (accessories.useBottomSheet) {
-            slipSheets.push({ y: 0 });
-            currentYShift += thickness;
-        }
-
-        if (accessories.padEveryLayer || accessories.interlayerCount > 0) {
-            let padsPlaced = 0;
-            for (let i = 0; i < yLevels.length; i++) {
-                yShiftsMap[yLevels[i]] = currentYShift;
-
-                // Determine if a pad should be placed on this layer
-                const shouldPlacePad = accessories.padEveryLayer
-                    ? (i < yLevels.length - 1)
-                    : (padsPlaced < accessories.interlayerCount && i < yLevels.length - 1);
-
-                if (shouldPlacePad) {
-                    const itemsInLayer = rawResult.placedItems.filter(item => Math.round(item.y) === yLevels[i]);
-                    const maxHInLayer = Math.max(...itemsInLayer.map(item => item.h || item.height));
-
-                    slipSheets.push({ y: yLevels[i] + maxHInLayer + currentYShift });
-                    currentYShift += thickness;
-                    padsPlaced++;
-                }
-            }
-        } else {
-            yLevels.forEach(y => { yShiftsMap[y] = currentYShift; });
-        }
-
-        const shiftedItems = rawResult.placedItems.map(item => ({
-            ...item,
-            y: item.y + (yShiftsMap[Math.round(item.y)] || 0)
-        }));
-
-        let finalHeight = shiftedItems.reduce((max, p) => Math.max(max, p.y + (p.h || p.height)), 0);
-
-        if (accessories.useTopSheet && finalHeight > 0) {
-            slipSheets.push({ y: finalHeight });
-            finalHeight += thickness;
-        }
-
-        return {
-            ...rawResult,
-            placedItems: shiftedItems,
-            resultingHeight: finalHeight,
-            slipSheets
-        };
-    };
-
     const handleOptimize = () => {
         const activeCargo = cargoList.filter(item => item.quantity > 0 && item.width > 0 && item.length > 0 && item.height > 0);
         if (activeCargo.length === 0) return;
 
+        // Sanitize the cargo payload before sending it to the worker
         const sanitizedCargo = activeCargo.map(c => ({
             ...c,
             cargoId: c.cargoId || c.id,
@@ -661,65 +605,56 @@ export default function App() {
         }));
 
         const spec = PALLET_SPECS[palletType];
-        let remainingCargo = sanitizedCargo.map(c => ({ ...c }));
-        let generatedPallets = [];
-        let palletNum = 1;
 
-        while (remainingCargo.some(c => c.quantity > 0)) {
-            const currentCargo = remainingCargo.filter(c => c.quantity > 0);
-            if (currentCargo.length === 0) break;
+        // Define the tournament roster
+        const algorithmsToRun = optimizerType === 'AUTO_SIMULATE'
+            ? [
+                OPTIMIZER_STRATEGIES.TIER_INTERLOCKED,
+                OPTIMIZER_STRATEGIES.COLUMNAR_BLOCK,
+                OPTIMIZER_STRATEGIES.EXTREME_POINT,
+                OPTIMIZER_STRATEGIES.DENSE_LAYERED,
+                OPTIMIZER_STRATEGIES.HORIZONTAL_GUILLOTINE,
+                OPTIMIZER_STRATEGIES.WALL_BLOCK,
+                OPTIMIZER_STRATEGIES.UNIFORM_BLOCK,
+            ]
+            : [optimizerType];
 
-            const rawResultsArray = runPalletOptimization(
-                optimizerType,
-                currentCargo,
-                spec,
-                maxHeight,
-                overhangX,
-                overhangY,
-                0.75
-            );
+        setIsOptimizing(true); // Trigger UI loading spinner
 
-            // Handle router returns that might be arrays or single objects
-            const rawResult = Array.isArray(rawResultsArray) ? rawResultsArray[0] : rawResultsArray;
+        // Initialize the Web Worker (Vite standard syntax)
+        const worker = new Worker(new URL('./utils/palletWorker.js', import.meta.url), { type: 'module' });
 
-            if (!rawResult || !rawResult.placedItems || rawResult.placedItems.length === 0) break;
+        worker.onmessage = (e) => {
+            const championResult = e.data;
+            if (championResult) {
+                setPackedData(championResult);
+                setSelectedPalletIdx(0);
+                setVisibleHeight(maxHeight);
 
-            const result = applyAccessoriesToPallet(rawResult, accessories);
-
-            const placedCounts = {};
-            result.placedItems.forEach(p => {
-                const cId = p.cargoId || (p.id ? p.id.substring(0, p.id.lastIndexOf('-')) : null) || p.id;
-                if (cId) {
-                    placedCounts[cId] = (placedCounts[cId] || 0) + 1;
+                if (optimizerType === 'AUTO_SIMULATE') {
+                    console.log(`🏆 Tournament Winner: ${championResult.winningAlgorithm}`);
                 }
-            });
-
-            let placedInRound = 0;
-            remainingCargo = remainingCargo.map(c => {
-                const count = placedCounts[c.id] || placedCounts[c.cargoId] || 0;
-                placedInRound += count;
-                return { ...c, quantity: Math.max(0, c.quantity - count) };
-            });
-
-            if (placedInRound === 0 && result.placedItems.length > 0) {
-                const targetId = currentCargo[0].id;
-                remainingCargo = remainingCargo.map(c =>
-                    c.id === targetId ? { ...c, quantity: Math.max(0, c.quantity - result.placedItems.length) } : c
-                );
             }
+            setIsOptimizing(false); // Stop UI loading spinner
+            worker.terminate();     // Kill the worker to free memory
+        };
 
-            generatedPallets.push({ palletIndex: palletNum, accessories, ...result });
-            palletNum++;
-            if (palletNum > 50) break;
-        }
+        worker.onerror = (error) => {
+            console.error("Worker optimization failed:", error);
+            setIsOptimizing(false);
+            worker.terminate();
+        };
 
-        setPackedData({
-            pallets: generatedPallets,
-            totalPallets: generatedPallets.length,
-            totalUnplaced: remainingCargo.reduce((sum, c) => sum + c.quantity, 0)
+        // Fire off the job to the background thread
+        worker.postMessage({
+            activeCargo: sanitizedCargo,
+            spec,
+            maxHeight,
+            overhangX,
+            overhangY,
+            algorithmsToRun,
+            accessories
         });
-        setSelectedPalletIdx(0);
-        setVisibleHeight(maxHeight);
     };
 
     useEffect(() => {
@@ -1099,6 +1034,10 @@ export default function App() {
                                 className="form-select"
                                 style={{ width: '100%', borderColor: '#38bdf8' }}
                             >
+                                <option value="AUTO_SIMULATE" style={{ fontWeight: 'bold', color: '#10b981' }}>
+                                    🚀 Auto-Simulate Best Fit (AI Tournament)
+                                </option>
+                                <option disabled>────────── Manual Overrides ──────────</option>
                                 <option value={OPTIMIZER_STRATEGIES.CHIMNEY_INTERLOCKED}>
                                     Industry Standard Chimney Interlocking Packer
                                 </option>
@@ -1224,8 +1163,17 @@ export default function App() {
                             </div>
                         </div>
 
-                        <button type="button" onClick={handleOptimize} className="btn-primary" disabled={cargoList.every(c => c.quantity === 0)} style={{ opacity: cargoList.every(c => c.quantity === 0) ? 0.5 : 1, cursor: cargoList.every(c => c.quantity === 0) ? 'not-allowed' : 'pointer' }}>
-                            {t(lang, 'org_btn')}
+                        <button
+                            type="button"
+                            onClick={handleOptimize}
+                            className="btn-primary"
+                            disabled={cargoList.every(c => c.quantity === 0) || isOptimizing}
+                            style={{
+                                opacity: cargoList.every(c => c.quantity === 0) || isOptimizing ? 0.5 : 1,
+                                cursor: cargoList.every(c => c.quantity === 0) || isOptimizing ? 'not-allowed' : 'pointer'
+                            }}
+                        >
+                            {isOptimizing ? '⏳ Simulating Options...' : t(lang, 'org_btn')}
                         </button>
 
                         {packedData && packedData.pallets && packedData.pallets.length > 0 && (

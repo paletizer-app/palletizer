@@ -175,8 +175,8 @@ export async function generateLogisticsSpecPDF({ palletData, palletIndex, totalP
     const cogY = sumY / Math.max(1, totalCargoWeight);
     const isTopHeavy = palletData.resultingHeight > 0 && (cogY / palletData.resultingHeight) > 0.55;
 
-    // Stackability Matrix Override
-    const isStackable = palletData.efficiency > 80 && !isTopHeavy && palletData.resultingHeight < 1500 && !hasFragileItems;
+    // STRICT OVERRIDE: All pallets are unstackable.
+    const isStackable = false;
 
     // --- 1. HEADER ---
     doc.setFillColor(...primaryColor);
@@ -246,15 +246,15 @@ export async function generateLogisticsSpecPDF({ palletData, palletIndex, totalP
     drawAlert('OVERHANG STATUS', hasOverhang ? 'FAIL: PERIMETER OVERHANG DETECTED' : 'PASS: LOAD IS FLUSH TO PALLET', hasOverhang, false);
     drawAlert('LOAD STABILITY (CoG)', isTopHeavy ? 'WARNING: TOP HEAVY LOAD / TIP RISK' : 'PASS: BOTTOM HEAVY', isTopHeavy, isTopHeavy);
 
-    // Dynamic Stackability Reason
-    let stackStatus = 'YES - STACKABLE (MAX 2 HIGH)';
-    if (!isStackable) {
-        if (hasFragileItems) stackStatus = 'NO - FRAGILE MATERIALS (GLASS) DETECTED';
-        else if (isTopHeavy) stackStatus = 'NO - TOP HEAVY LOAD UNSTABLE';
-        else if (palletData.efficiency <= 80) stackStatus = 'NO - UNEVEN LOAD SURFACE';
-        else stackStatus = 'NO - EXCEEDS HEIGHT LIMITS';
-    }
-    drawAlert('STACKABILITY', stackStatus, !isStackable, false);
+    // Default stackability to standard strict policy, or provide specific physical reasoning if applicable.
+    let stackStatus = 'NO - DO NOT DOUBLE STACK';
+    if (hasFragileItems) stackStatus = 'NO - FRAGILE MATERIALS (GLASS) DETECTED';
+    else if (isTopHeavy) stackStatus = 'NO - TOP HEAVY LOAD UNSTABLE';
+    else if (palletData.efficiency <= 80) stackStatus = 'NO - UNEVEN LOAD SURFACE';
+    else if (palletData.resultingHeight >= 1500) stackStatus = 'NO - EXCEEDS HEIGHT LIMITS';
+
+    // Hardcoded to true (Danger status) since stackability is universally false
+    drawAlert('STACKABILITY', stackStatus, true, false);
 
     // --- 4. NATIVE 3D ISOMETRIC PROJECTION ENGINE ---
     const diagSize = 85;
