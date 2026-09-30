@@ -6,15 +6,10 @@ import { t, conv, UNITS, PRODUCT_TRANSLATIONS } from './i18n';
 // TRANSLATION HELPER (SKU-BASED)
 // ============================================================================
 export const getTranslatedProductName = (item, lang = 'en') => {
-    // Attempt to pull the unique identifier
     const sku = item.productCode || item.code || item.cargoId;
-
-    // 1. Try to find the exact SKU in the translation dictionary
     if (sku && PRODUCT_TRANSLATIONS[sku] && PRODUCT_TRANSLATIONS[sku][lang]) {
         return PRODUCT_TRANSLATIONS[sku][lang];
     }
-
-    // 2. Fallback: use the raw name, but strip the leading "1 - " off of it
     return (item.name || '').replace(/^\d+\s*-\s*/, '');
 };
 
@@ -40,11 +35,9 @@ async function loadUnicodeFonts(doc) {
             fetch('https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/fonts/Roboto/Roboto-Regular.ttf'),
             fetch('https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/fonts/Roboto/Roboto-Medium.ttf')
         ]);
-
         cachedRegularFont = arrayBufferToBase64(await regRes.arrayBuffer());
         cachedBoldFont = arrayBufferToBase64(await boldRes.arrayBuffer());
     }
-
     doc.addFileToVFS('Roboto-Regular.ttf', cachedRegularFont);
     doc.addFileToVFS('Roboto-Medium.ttf', cachedBoldFont);
     doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
@@ -52,19 +45,10 @@ async function loadUnicodeFonts(doc) {
 }
 
 // ============================================================================
-// 1. CUSTOMER PACKING SLIP & SHIPPING MANIFEST (DYNAMIC OVERLAP-PROOF)
+// 1. CUSTOMER PACKING SLIP & SHIPPING MANIFEST (Retained from previous)
 // ============================================================================
-export async function generatePalletPDF({
-                                            palletData,
-                                            palletIndex,
-                                            totalPallets,
-                                            palletSpec,
-                                            orderInfo = {},
-                                            lang = 'en',
-                                            unit = UNITS.METRIC
-                                        }) {
+export async function generatePalletPDF({ palletData, palletIndex, totalPallets, palletSpec, orderInfo = {}, lang = 'en', unit = UNITS.METRIC }) {
     const doc = jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-
     await loadUnicodeFonts(doc);
     doc.setFont('Roboto', 'normal');
 
@@ -74,15 +58,10 @@ export async function generatePalletPDF({
 
     const palletDeckHeight = palletSpec.height || 144;
     const totalCargoWeight = palletData.placedItems.reduce((sum, i) => sum + (Number(i.weight) || 0), 0);
-    const tareWeight = 25;
-    const grossWeight = totalCargoWeight + tareWeight;
-
+    const grossWeight = totalCargoWeight + 25;
     const totalHeightMeters = ((palletData.resultingHeight + palletDeckHeight) / 1000);
     const displayHeight = unit === UNITS.IMPERIAL ? (totalHeightMeters * 3.28084).toFixed(2) : totalHeightMeters.toFixed(2);
-    const displayHeightUnit = conv.unitM(unit);
-    const displayWeightUnit = conv.unitW(unit);
 
-    // 1. TOP HEADER BAR
     doc.setFillColor(...primaryColor);
     doc.rect(0, 0, 210, 11, 'F');
     doc.setTextColor(255, 255, 255);
@@ -90,357 +69,316 @@ export async function generatePalletPDF({
     doc.setFontSize(11);
     doc.text(t(lang, 'app_title'), 8, 7.5);
 
-    doc.setFontSize(9);
-    doc.setFont('Roboto', 'normal');
-    doc.text(t(lang, 'pdf_slip'), 202, 7.5, { align: 'right' });
-
-    // 2. SUB-HEADER METADATA LINE
     let y = 15;
     doc.setTextColor(15, 23, 42);
     doc.setFontSize(8.5);
-    doc.setFont('Roboto', 'bold');
+    doc.text(`PALLET ${palletIndex + 1} OF ${totalPallets}`, 8, y);
+    doc.text(`PO: ${orderInfo.poNumber || 'N/A'}`, 85, y);
+    doc.text(`Date: ${orderInfo.date || new Date().toISOString().split('T')[0]}`, 202, y, { align: 'right' });
 
-    const palletIdText = `${t(lang, 'pdf_id')}: PALLET ${palletIndex + 1} OF ${totalPallets}`;
-    doc.text(palletIdText, 8, y);
-
-    const palletIdWidth = doc.getTextWidth(palletIdText);
-    const poXPos = Math.max(85, 8 + palletIdWidth + 8);
-    doc.text(`${t(lang, 'pdf_po')}:`, poXPos, y);
-
-    doc.setFont('Roboto', 'normal');
-    doc.setFontSize(8);
-    doc.text(`${t(lang, 'date')}: ${orderInfo.date || new Date().toISOString().split('T')[0]}`, 202, y, { align: 'right' });
-
-    // 3. COMPACT SHIPPER STRIP
-    y += 3;
-    doc.setFillColor(...lightBgColor);
-    doc.rect(8, y, 194, 9, 'F');
-
-    doc.setFont('Roboto', 'bold');
-    doc.setFontSize(7.5);
-    doc.setTextColor(...accentColor);
-
-    const senderLabelText = `${t(lang, 'pdf_ship')}:`;
-    doc.text(senderLabelText, 11, y + 5.5);
-
-    const senderLabelWidth = doc.getTextWidth(senderLabelText);
-    const senderDetailsXPos = 11 + senderLabelWidth + 3;
-
-    doc.setFont('Roboto', 'normal');
-    doc.setTextColor(15, 23, 42);
-    doc.text('LAZAROS KALANTZIS FOODS GP  •  Logistics & Warehouse Dept.  •  Astakos Aitoloakarnanias', senderDetailsXPos, y + 5.5);
-
-    // 4. BLANK CONSIGNEE DETAILS PLACEHOLDER
-    y += 10;
-    doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(203, 213, 225); // Slate 300 border
-    doc.rect(8, y, 194, 15, 'FD'); // 15mm height white box
-
-    doc.setFont('Roboto', 'bold');
-    doc.setFontSize(7.5);
-    doc.setTextColor(...accentColor);
-
-    const consLabelText = `${t(lang, 'pdf_cons')}:`;
-    doc.text(consLabelText, 11, y + 5.5);
-
-    const consLabelWidth = doc.getTextWidth(consLabelText);
-
-    // Draw subtle lines for handwriting
-    doc.setDrawColor(226, 232, 240); // Slate 200
-    doc.line(11 + consLabelWidth + 3, y + 5.5, 198, y + 5.5); // Line 1 (Top right of label)
-    doc.line(11, y + 10.5, 198, y + 10.5); // Line 2 (Full width)
-
-    // 5. COMPACT METRICS STRIP
-    y += 17; // Jump past the consignee box
-    const cardWidth = 62;
-    const cardHeight = 8;
-    const cardGap = 4;
+    y += 15;
     const metrics = [
-        { label: t(lang, 'pdf_ptype'), val: palletSpec.name.split('(')[0].trim() },
-        { label: t(lang, 'pdf_gw'), val: `${conv.formatW(grossWeight, unit)} ${displayWeightUnit}` },
-        { label: t(lang, 'pdf_th'), val: `${displayHeight} ${displayHeightUnit}` }
+        { label: 'Pallet Type', val: palletSpec.name.split('(')[0].trim() },
+        { label: 'Gross Weight', val: `${conv.formatW(grossWeight, unit)} ${conv.unitW(unit)}` },
+        { label: 'Total Height', val: `${displayHeight} ${conv.unitM(unit)}` }
     ];
 
     metrics.forEach((m, idx) => {
-        const xPos = 8 + (idx * (cardWidth + cardGap));
+        const xPos = 8 + (idx * 66);
         doc.setFillColor(255, 255, 255);
         doc.setDrawColor(203, 213, 225);
-        doc.rect(xPos, y, cardWidth, cardHeight, 'FD');
-
+        doc.rect(xPos, y, 62, 8, 'FD');
         doc.setFont('Roboto', 'bold');
-
-        let labelFontSize = 6;
-        doc.setFontSize(labelFontSize);
-        while (doc.getTextWidth(m.label) > (cardWidth - 5) && labelFontSize > 4.5) {
-            labelFontSize -= 0.5;
-            doc.setFontSize(labelFontSize);
-        }
-
         doc.setTextColor(100, 116, 139);
+        doc.setFontSize(6);
         doc.text(m.label, xPos + 2.5, y + 3);
-
         doc.setFontSize(8);
         doc.setTextColor(15, 23, 42);
         doc.text(m.val, xPos + 2.5, y + 6.8);
     });
 
-    // 6. MANIFEST TABLE TITLE
     y += 11;
-    doc.setFont('Roboto', 'bold');
     doc.setFontSize(8.5);
-    doc.setTextColor(15, 23, 42);
-    doc.text(t(lang, 'pdf_manifest'), 8, y);
+    doc.text('CARGO MANIFEST', 8, y);
 
-    // 7. Clean and Translate Product Names via SKU Dictionary
     const itemSummaryMap = {};
     palletData.placedItems.forEach(item => {
-
-        const finalDisplayName = getTranslatedProductName(item, lang);
-
-        // Render 6kg PET objects as Buckets instead of Barrels
-        let resolvedDisplayType = item.displayType || item.type;
-        if (item.type === 'barrel' && (finalDisplayName.toUpperCase().includes('PET') || (item.name && item.name.toUpperCase().includes('PET')))) {
-            resolvedDisplayType = 'bucket';
+        const finalName = getTranslatedProductName(item, lang);
+        if (!itemSummaryMap[finalName]) {
+            itemSummaryMap[finalName] = { name: finalName, dims: `${conv.formatL(item.width, unit)}x${conv.formatL(item.length || item.width, unit)}x${conv.formatL(item.height, unit)}`, uWeight: Number(item.weight) || 0, qty: 0 };
         }
-
-        const key = finalDisplayName;
-        if (!itemSummaryMap[key]) {
-            let dimStr = item.type === 'barrel'
-                ? `Ø${conv.formatL(item.diameter || item.width, unit)} x ${conv.formatL(item.height, unit)}`
-                : `${conv.formatL(item.width, unit)} x ${conv.formatL(item.length, unit)} x ${conv.formatL(item.height, unit)}`;
-            itemSummaryMap[key] = {
-                name: finalDisplayName,
-                type: t(lang, resolvedDisplayType),
-                dimensions: dimStr,
-                unitWeight: Number(item.weight) || 0,
-                qty: 0,
-                totalWeight: 0
-            };
-        }
-        itemSummaryMap[key].qty += 1;
-        itemSummaryMap[key].totalWeight += (Number(item.weight) || 0);
+        itemSummaryMap[finalName].qty += 1;
     });
 
-    const tableRows = Object.values(itemSummaryMap).map((row, index) => [
-        index + 1,
-        row.name,
-        row.type.toUpperCase(),
-        row.dimensions,
-        `${conv.formatW(row.unitWeight, unit)}`,
-        row.qty,
-        `${conv.formatW(row.totalWeight, unit)}`
-    ]);
+    const tableRows = Object.values(itemSummaryMap).map((r, i) => [i + 1, r.name, r.dims, `${conv.formatW(r.uWeight, unit)}`, r.qty, `${conv.formatW(r.uWeight * r.qty, unit)}`]);
 
-    // 8. HYPER-COMPACT AUTOTABLE
     autoTable(doc, {
         startY: y + 2,
         margin: { left: 8, right: 8 },
-        head: [['#', t(lang, 'pdf_desc'), t(lang, 'type'), `${t(lang, 'pdf_dims')} (${conv.unitL(unit)})`, `${t(lang, 'pdf_uwt')} (${displayWeightUnit})`, t(lang, 'pdf_qty'), `${t(lang, 'pdf_twt')} (${displayWeightUnit})`]],
+        head: [['#', 'Description', `Dimensions`, `Unit Wt`, 'Qty', `Total Wt`]],
         body: tableRows,
-        theme: 'striped',
-        styles: {
-            font: 'Roboto',
-            cellPadding: { top: 0.7, bottom: 0.7, left: 1.5, right: 1.5 },
-            overflow: 'linebreak'
-        },
-        headStyles: {
-            font: 'Roboto',
-            fontStyle: 'bold',
-            fillColor: primaryColor,
-            textColor: [255, 255, 255],
-            fontSize: 7,
-            cellPadding: { top: 1.2, bottom: 1.2, left: 1.5, right: 1.5 }
-        },
-        bodyStyles: {
-            font: 'Roboto',
-            fontSize: 7,
-            textColor: [30, 41, 59]
-        },
-        columnStyles: {
-            0: { cellWidth: 8, halign: 'center' },
-            1: { cellWidth: 'auto' },
-            2: { cellWidth: 18 },
-            3: { cellWidth: 38 },
-            4: { cellWidth: 18, halign: 'right' },
-            5: { cellWidth: 12, halign: 'right' },
-            6: { cellWidth: 22, halign: 'right' }
-        },
-        foot: [['', '', '', '', t(lang, 'pdf_totals'), palletData.placedItems.length, `${conv.formatW(totalCargoWeight, unit)}`]],
-        footStyles: {
-            font: 'Roboto',
-            fontStyle: 'bold',
-            fillColor: lightBgColor,
-            textColor: [15, 23, 42],
-            fontSize: 7,
-            halign: 'right',
-            cellPadding: { top: 1, bottom: 1, left: 1.5, right: 1.5 }
-        }
+        styles: { font: 'Roboto', fontSize: 7, cellPadding: 1.5 },
+        headStyles: { fillColor: primaryColor, textColor: 255 },
+        foot: [['', '', '', 'TOTAL', palletData.placedItems.length, `${conv.formatW(totalCargoWeight, unit)}`]],
+        footStyles: { fillColor: lightBgColor, textColor: [15, 23, 42], fontStyle: 'bold' }
     });
-
-    // 9. COMPACT SIGNATURE FOOTER
-    let finalY = doc.lastAutoTable.finalY + 8;
-    if (finalY > 275) {
-        doc.addPage();
-        finalY = 15;
-    }
-
-    doc.setDrawColor(203, 213, 225);
-    doc.setLineWidth(0.4);
-    doc.line(8, finalY + 8, 62, finalY + 8);
-    doc.line(74, finalY + 8, 128, finalY + 8);
-    doc.line(140, finalY + 8, 202, finalY + 8);
-
-    doc.setFontSize(6.5);
-    doc.setFont('Roboto', 'bold');
-    doc.setTextColor(100, 116, 139);
-    doc.text(t(lang, 'pdf_pby'), 8, finalY + 11.5);
-    doc.text(t(lang, 'pdf_qa'), 74, finalY + 11.5);
-    doc.text(t(lang, 'pdf_drv'), 140, finalY + 11.5);
 
     doc.save(`Packing_Sheet_Pallet_${palletIndex + 1}.pdf`);
 }
 
 // ============================================================================
-// 2. WAREHOUSE LAYER-BY-LAYER ASSEMBLY GUIDE (BLUEPRINT SCHEMATIC)
+// 2. LOGISTICS & TRANSPORT PALLET SPECIFICATION (WITH NATIVE 3D ISOMETRIC ENGINE)
 // ============================================================================
-export async function generateWarehouseGuidePDF({
-                                                    palletData,
-                                                    palletIndex,
-                                                    totalPallets,
-                                                    palletSpec,
-                                                    lang = 'en',
-                                                    unit = UNITS.METRIC
-                                                }) {
+export async function generateLogisticsSpecPDF({ palletData, palletIndex, totalPallets, palletSpec, lang = 'en', unit = UNITS.METRIC }) {
     const doc = jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-
     await loadUnicodeFonts(doc);
     doc.setFont('Roboto', 'normal');
 
     const primaryColor = [15, 23, 42];
-    const accentColor = [2, 132, 199];
+    const lightBg = [241, 245, 249];
 
-    const layerMap = {};
+    // --- Core Calculations ---
+    const palletDeckHeight = palletSpec.height || 144;
+    const totalCargoWeight = palletData.placedItems.reduce((sum, i) => sum + (Number(i.weight) || 0), 0);
+    const tareWeight = 25;
+    const grossWeight = totalCargoWeight + tareWeight;
+    const totalHeightMm = palletData.resultingHeight + palletDeckHeight;
+    const displayHeight = unit === UNITS.IMPERIAL ? (totalHeightMm / 25.4).toFixed(1) : (totalHeightMm / 1000).toFixed(2);
+    const displayHeightUnit = unit === UNITS.IMPERIAL ? 'in' : 'm';
+
+    // Footprint & Overhang Checks
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
     palletData.placedItems.forEach(item => {
-        const yKey = Math.round(item.y);
-        if (!layerMap[yKey]) layerMap[yKey] = [];
-        layerMap[yKey].push(item);
+        const halfW = (item.w || item.width) / 2;
+        const halfL = (item.l || item.length) / 2;
+        const cx = item.x, cz = item.z;
+        if (cx - halfW < minX) minX = cx - halfW;
+        if (cx + halfW > maxX) maxX = cx + halfW;
+        if (cz - halfL < minZ) minZ = cz - halfL;
+        if (cz + halfL > maxZ) maxZ = cz + halfL;
     });
-    const sortedYLevels = Object.keys(layerMap).map(Number).sort((a, b) => a - b);
 
+    const cargoW = maxX - minX;
+    const cargoL = maxZ - minZ;
+    const hasOverhang = Math.max(0, cargoW - palletSpec.width) > 0 || Math.max(0, cargoL - palletSpec.length) > 0;
+
+    // --- Fragility & Stackability Scanning ---
+    const hasFragileItems = palletData.placedItems.some(item => {
+        const name = (item.name || '').toLowerCase();
+        return name.includes('glass') || name.includes('jar') || name.includes('bottle') || name.includes('fragile');
+    });
+
+    let sumY = 0;
+    palletData.placedItems.forEach(item => {
+        sumY += (item.y + ((item.h || item.height) / 2)) * (Number(item.weight) || 1);
+    });
+    const cogY = sumY / Math.max(1, totalCargoWeight);
+    const isTopHeavy = palletData.resultingHeight > 0 && (cogY / palletData.resultingHeight) > 0.55;
+
+    // Stackability Matrix Override
+    const isStackable = palletData.efficiency > 80 && !isTopHeavy && palletData.resultingHeight < 1500 && !hasFragileItems;
+
+    // --- 1. HEADER ---
     doc.setFillColor(...primaryColor);
-    doc.rect(0, 0, 210, 22, 'F');
+    doc.rect(0, 0, 210, 20, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFont('Roboto', 'bold');
-    doc.setFontSize(12);
-    doc.text(t(lang, 'pdf_whg'), 14, 14);
-
-    doc.setFontSize(9);
+    doc.setFontSize(14);
+    doc.text('LOGISTICS PALLET SPECIFICATION', 14, 13);
+    doc.setFontSize(10);
     doc.setFont('Roboto', 'normal');
-    doc.text(`PALLET #${palletIndex + 1} OF ${totalPallets} | ${palletSpec.name.split('(')[0]}`, 200, 14, { align: 'right' });
+    doc.text(`UNIT ${palletIndex + 1} OF ${totalPallets}`, 196, 13, { align: 'right' });
 
-    let currentY = 28;
+    let y = 28;
 
-    sortedYLevels.forEach((yLevel, layerIdx) => {
-        const layerItems = layerMap[yLevel];
-        const layerThickness = Math.max(...layerItems.map(i => i.height));
+    // --- 2. TRANSPORT METRICS ---
+    doc.setFillColor(...lightBg);
+    doc.rect(14, y, 182, 38, 'F');
+    doc.setTextColor(...primaryColor);
+    doc.setFont('Roboto', 'bold');
+    doc.setFontSize(10);
+    doc.text('TRANSPORT DIMENSIONS & WEIGHTS', 18, y + 6);
+    doc.setDrawColor(203, 213, 225);
+    doc.line(18, y + 9, 192, y + 9);
 
-        if (currentY + 110 > 280) {
-            doc.addPage();
-            currentY = 20;
-        }
+    doc.setFontSize(8);
+    doc.setFont('Roboto', 'normal'); doc.text('Base Type:', 18, y + 15);
+    doc.setFont('Roboto', 'bold'); doc.text(`${palletSpec.name}`, 45, y + 15);
+    doc.setFont('Roboto', 'normal'); doc.text('Gross Weight:', 18, y + 21);
+    doc.setFont('Roboto', 'bold'); doc.text(`${conv.formatW(grossWeight, unit)} ${conv.unitW(unit)}`, 45, y + 21);
+    doc.setFont('Roboto', 'normal'); doc.text('Net Cargo Wt:', 18, y + 27);
+    doc.setFont('Roboto', 'bold'); doc.text(`${conv.formatW(totalCargoWeight, unit)} ${conv.unitW(unit)}`, 45, y + 27);
 
-        doc.setFillColor(...accentColor);
-        doc.rect(14, currentY, 182, 8, 'F');
-        doc.setTextColor(255, 255, 255);
+    doc.setFont('Roboto', 'normal'); doc.text('Shipping Height:', 105, y + 15);
+    doc.setFont('Roboto', 'bold'); doc.text(`${displayHeight} ${displayHeightUnit}`, 145, y + 15);
+    doc.setFont('Roboto', 'normal'); doc.text('Max Footprint:', 105, y + 21);
+    doc.setFont('Roboto', 'bold'); doc.text(`${conv.formatL(Math.max(palletSpec.width, cargoW), unit)} x ${conv.formatL(Math.max(palletSpec.length, cargoL), unit)} ${conv.unitL(unit)}`, 145, y + 21);
+    doc.setFont('Roboto', 'normal'); doc.text('Total Items:', 105, y + 27);
+    doc.setFont('Roboto', 'bold'); doc.text(`${palletData.placedItems.length} pcs`, 145, y + 27);
+
+    y += 44;
+
+    // --- 3. HANDLING ALERTS ---
+    doc.setTextColor(...primaryColor);
+    doc.setFont('Roboto', 'bold');
+    doc.setFontSize(10);
+    doc.text('HANDLING ALERTS & 3D LOAD VISUALIZATION', 14, y);
+    y += 5;
+
+    const alertX = 110;
+    let alertY = y;
+
+    const drawAlert = (title, status, isDanger, isWarning) => {
+        const bg = isDanger ? [254, 226, 226] : (isWarning ? [254, 243, 199] : [240, 253, 244]);
+        const tc = isDanger ? [185, 28, 28] : (isWarning ? [180, 83, 9] : [21, 128, 61]);
+
+        doc.setFillColor(...bg);
+        doc.rect(alertX, alertY, 86, 12, 'F');
         doc.setFont('Roboto', 'bold');
-        doc.setFontSize(9);
+        doc.setFontSize(7.5);
+        doc.setTextColor(...tc);
+        doc.text(title, alertX + 3, alertY + 5);
+        doc.setFontSize(8.5);
+        doc.text(status, alertX + 3, alertY + 9.5);
+        alertY += 15;
+    };
 
-        let layerHeader = `${t(lang, 'pdf_layer')} ${layerIdx + 1}  •  ${t(lang, 'pdf_base')}: ${conv.formatL(yLevel, unit)}${conv.unitL(unit)}  |  ${t(lang, 'pdf_maxth')}: ${conv.formatL(layerThickness, unit)}${conv.unitL(unit)}  |  ${t(lang, 'items')}: ${layerItems.length} ${t(lang, 'pdf_pcs')}`;
-        doc.text(layerHeader, 18, currentY + 5.5);
+    drawAlert('OVERHANG STATUS', hasOverhang ? 'FAIL: PERIMETER OVERHANG DETECTED' : 'PASS: LOAD IS FLUSH TO PALLET', hasOverhang, false);
+    drawAlert('LOAD STABILITY (CoG)', isTopHeavy ? 'WARNING: TOP HEAVY LOAD / TIP RISK' : 'PASS: BOTTOM HEAVY', isTopHeavy, isTopHeavy);
 
-        currentY += 12;
+    // Dynamic Stackability Reason
+    let stackStatus = 'YES - STACKABLE (MAX 2 HIGH)';
+    if (!isStackable) {
+        if (hasFragileItems) stackStatus = 'NO - FRAGILE MATERIALS (GLASS) DETECTED';
+        else if (isTopHeavy) stackStatus = 'NO - TOP HEAVY LOAD UNSTABLE';
+        else if (palletData.efficiency <= 80) stackStatus = 'NO - UNEVEN LOAD SURFACE';
+        else stackStatus = 'NO - EXCEEDS HEIGHT LIMITS';
+    }
+    drawAlert('STACKABILITY', stackStatus, !isStackable, false);
 
-        const diagW = 85;
-        const diagH = diagW * (palletSpec.length / palletSpec.width);
-        const startX = 14;
-        const startY = currentY;
+    // --- 4. NATIVE 3D ISOMETRIC PROJECTION ENGINE ---
+    const diagSize = 85;
+    const diagX = 14;
 
-        doc.setFillColor(226, 232, 240);
-        doc.setDrawColor(71, 85, 105);
-        doc.setLineWidth(0.5);
-        doc.rect(startX, startY, diagW, diagH, 'FD');
+    // Background placeholder for drawing
+    doc.setFillColor(248, 250, 252);
+    doc.rect(diagX, y, diagSize, diagSize, 'F');
 
-        const scale = diagW / palletSpec.width;
-        const palletHalfW = palletSpec.width / 2;
-        const palletHalfL = palletSpec.length / 2;
+    // Isometric Math (30-degree projection)
+    const angle = Math.PI / 6;
+    const cosA = Math.cos(angle);
+    const sinA = Math.sin(angle);
 
-        layerItems.forEach((item, itemIdx) => {
-            const itemW = item.width;
-            const itemL = item.length;
-            const cornerX = item.x - itemW / 2;
-            const cornerZ = item.z - itemL / 2;
-            const paperX = startX + (cornerX + palletHalfW) * scale;
-            const paperY = startY + (cornerZ + palletHalfL) * scale;
-            const paperW = itemW * scale;
-            const paperL = itemL * scale;
+    // Calculate maximum bounds to fit the drawing perfectly in the box
+    const isoTotalW = (palletSpec.width + palletSpec.length) * cosA;
+    const isoTotalH = totalHeightMm + (palletSpec.width + palletSpec.length) * sinA;
+    const scale = Math.min((diagSize - 10) / isoTotalW, (diagSize - 10) / isoTotalH);
 
-            doc.setFillColor(254, 215, 170);
-            doc.setDrawColor(194, 65, 12);
-            doc.setLineWidth(0.3);
+    const originX = diagX + (diagSize / 2);
+    const originY = y + diagSize - 10; // Anchor at the bottom of the bounding box
 
-            if (item.type === 'barrel') {
-                doc.circle(paperX + paperW / 2, paperY + paperL / 2, paperW / 2, 'FD');
-            } else {
-                doc.rect(paperX, paperY, paperW, paperL, 'FD');
-            }
+    const toIso = (bx, by, bz) => {
+        return {
+            x: originX + (bx - bz) * cosA * scale,
+            y: originY - (by * scale) + (bx + bz) * sinA * scale
+        };
+    };
 
-            doc.setFontSize(6.5);
-            doc.setTextColor(15, 23, 42);
-            doc.setFont('Roboto', 'bold');
-            doc.text(`${itemIdx + 1}`, paperX + paperW / 2, paperY + paperL / 2 + 2, { align: 'center' });
-        });
+    function drawIsoBox(bx, by, bz, bw, bh, bl, cFront, cRight, cTop) {
+        const p0 = toIso(bx, by, bz+bl);       // Front-Bottom
+        const p1 = toIso(bx+bw, by, bz+bl);    // Right-Bottom
+        const p2 = toIso(bx+bw, by+bh, bz+bl); // Right-Top
+        const p3 = toIso(bx, by+bh, bz+bl);    // Front-Top
+        const p4 = toIso(bx+bw, by, bz);       // Back-Right-Bottom
+        const p5 = toIso(bx+bw, by+bh, bz);    // Back-Right-Top
+        const p6 = toIso(bx, by+bh, bz);       // Back-Left-Top
 
-        doc.setFontSize(6);
-        doc.setTextColor(100, 116, 139);
-        doc.setFont('Roboto', 'bold');
-        doc.text(t(lang, 'pdf_front'), startX + diagW / 2, startY - 1.5, { align: 'center' });
+        doc.setLineWidth(0.2);
+        doc.setDrawColor(15, 23, 42);
 
-        const tableStartX = startX + diagW + 6;
-        const tableWidth = 182 - diagW - 6;
+        // Front Face (parallel to X axis)
+        doc.setFillColor(...cFront);
+        doc.lines([[p1.x-p0.x, p1.y-p0.y], [p2.x-p1.x, p2.y-p1.y], [p3.x-p2.x, p3.y-p2.y], [p0.x-p3.x, p0.y-p3.y]], p0.x, p0.y, [1,1], 'FD', true);
 
-        const itemSummaryMap = {};
-        layerItems.forEach(item => {
+        // Right Face (parallel to Z axis)
+        doc.setFillColor(...cRight);
+        doc.lines([[p4.x-p1.x, p4.y-p1.y], [p5.x-p4.x, p5.y-p4.y], [p2.x-p5.x, p2.y-p5.y], [p1.x-p2.x, p1.y-p2.y]], p1.x, p1.y, [1,1], 'FD', true);
 
-            const finalDisplayName = getTranslatedProductName(item, lang);
+        // Top Face
+        doc.setFillColor(...cTop);
+        doc.lines([[p2.x-p3.x, p2.y-p3.y], [p5.x-p2.x, p5.y-p2.y], [p6.x-p5.x, p6.y-p5.y], [p3.x-p6.x, p3.y-p6.y]], p3.x, p3.y, [1,1], 'FD', true);
+    }
 
-            const key = finalDisplayName;
-            if (!itemSummaryMap[key]) {
-                itemSummaryMap[key] = {
-                    name: finalDisplayName,
-                    dims: item.type === 'barrel' ? `Ø${conv.formatL(item.diameter, unit)}x${conv.formatL(item.height, unit)}` : `${conv.formatL(item.width, unit)}x${conv.formatL(item.length, unit)}x${conv.formatL(item.height, unit)}`,
-                    qty: 0
-                };
-            }
-            itemSummaryMap[key].qty += 1;
-        });
-
-        const rows = Object.values(itemSummaryMap).map((row) => [row.name, row.dims, row.qty]);
-
-        autoTable(doc, {
-            startY: startY,
-            margin: { left: tableStartX },
-            tableWidth: tableWidth,
-            head: [['Item', `${t(lang, 'pdf_dims')} (${conv.unitL(unit)})`, t(lang, 'pdf_qty')]],
-            body: rows,
-            theme: 'grid',
-            styles: { font: 'Roboto' },
-            headStyles: { font: 'Roboto', fontStyle: 'bold', fillColor: primaryColor, textColor: [255, 255, 255], fontSize: 7 },
-            bodyStyles: { font: 'Roboto', fontSize: 7, textColor: [30, 41, 59] },
-            columnStyles: { 0: { cellWidth: 'auto' }, 1: { cellWidth: 32 }, 2: { cellWidth: 12, halign: 'center' } }
-        });
-
-        currentY = Math.max(startY + diagH + 12, doc.lastAutoTable.finalY + 12);
+    // Depth Sorting (Painter's Algorithm)
+    // Render lowest items first (Y), then back-most (Z), then left-most (X)
+    const sortedItems = [...palletData.placedItems].sort((a, b) => {
+        if (Math.abs(a.y - b.y) > 0.1) return a.y - b.y;
+        const aMinZ = a.minZ ?? (a.z - (a.l || a.length)/2);
+        const bMinZ = b.minZ ?? (b.z - (b.l || b.length)/2);
+        if (Math.abs(aMinZ - bMinZ) > 0.1) return aMinZ - bMinZ;
+        const aMinX = a.minX ?? (a.x - (a.w || a.width)/2);
+        const bMinX = b.minX ?? (b.x - (b.w || b.width)/2);
+        return aMinX - bMinX;
     });
 
-    doc.save(`Warehouse_Assembly_Pallet_${palletIndex + 1}.pdf`);
+    // 1. Draw Wooden Pallet Base
+    const pW = palletSpec.width, pL = palletSpec.length, pH = palletDeckHeight;
+    drawIsoBox(-pW/2, 0, -pL/2, pW, pH, pL, [180, 83, 9], [120, 53, 15], [217, 119, 6]);
+
+    // 2. Draw Cargo Boxes
+    sortedItems.forEach(item => {
+        const bx = item.minX ?? (item.x - (item.w || item.width)/2);
+        const by = item.y + palletDeckHeight;
+        const bz = item.minZ ?? (item.z - (item.l || item.length)/2);
+        const bw = item.w || item.width;
+        const bh = item.h || item.height;
+        const bl = item.l || item.length;
+
+        // Cargo colors (Cardboard Orange styling with shading)
+        drawIsoBox(bx, by, bz, bw, bh, bl, [249, 115, 22], [194, 65, 12], [253, 186, 116]);
+    });
+
+    y += diagSize + 10;
+
+    // --- 5. LOAD MANIFEST SUMMARY ---
+    doc.setTextColor(...primaryColor);
+    doc.setFont('Roboto', 'bold');
+    doc.setFontSize(10);
+    doc.text('CARGO MANIFEST', 14, y);
+
+    const itemSummaryMap = {};
+    palletData.placedItems.forEach(item => {
+        const finalDisplayName = getTranslatedProductName(item, lang);
+        if (!itemSummaryMap[finalDisplayName]) {
+            itemSummaryMap[finalDisplayName] = {
+                name: finalDisplayName,
+                dims: item.type === 'barrel' ? `Ø${conv.formatL(item.diameter || item.width, unit)}x${conv.formatL(item.height, unit)}` : `${conv.formatL(item.width, unit)}x${conv.formatL(item.length, unit)}x${conv.formatL(item.height, unit)}`,
+                unitWeight: Number(item.weight) || 0,
+                qty: 0
+            };
+        }
+        itemSummaryMap[finalDisplayName].qty += 1;
+    });
+
+    const rows = Object.values(itemSummaryMap).map((row) => [
+        row.name,
+        row.dims,
+        `${conv.formatW(row.unitWeight, unit)}`,
+        row.qty,
+        `${conv.formatW(row.unitWeight * row.qty, unit)}`
+    ]);
+
+    autoTable(doc, {
+        startY: y + 4,
+        margin: { left: 14, right: 14 },
+        head: [['SKU / Description', `Dimensions (${conv.unitL(unit)})`, `Unit Wt (${conv.unitW(unit)})`, 'Qty', `Total Wt (${conv.unitW(unit)})`]],
+        body: rows,
+        theme: 'grid',
+        styles: { font: 'Roboto' },
+        headStyles: { font: 'Roboto', fontStyle: 'bold', fillColor: primaryColor, textColor: [255, 255, 255], fontSize: 8, cellPadding: 2 },
+        bodyStyles: { font: 'Roboto', fontSize: 8, textColor: [30, 41, 59], cellPadding: 2 },
+        columnStyles: { 0: { cellWidth: 'auto' }, 1: { cellWidth: 40 }, 2: { cellWidth: 22, halign: 'right' }, 3: { cellWidth: 15, halign: 'center' }, 4: { cellWidth: 25, halign: 'right' } }
+    });
+
+    doc.save(`Logistics_Spec_Pallet_${palletIndex + 1}.pdf`);
 }

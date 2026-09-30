@@ -7,7 +7,7 @@ import { PackedItem3D } from './components/PackedItem3D';
 import { CogMarker3D } from './components/CogMarker3D';
 import { AuthModal } from './components/AuthModal';
 import { useAuth } from './context/AuthContext';
-import { generatePalletPDF, generateWarehouseGuidePDF } from './utils/pdfGenerator';
+import { generatePalletPDF, generateLogisticsSpecPDF } from './utils/pdfGenerator';
 import { runPalletOptimization, OPTIMIZER_STRATEGIES } from './utils/palletOptimizers';
 import { t, conv, UNITS } from './utils/i18n';
 import './App.css';
@@ -1099,6 +1099,15 @@ export default function App() {
                                 className="form-select"
                                 style={{ width: '100%', borderColor: '#38bdf8' }}
                             >
+                                <option value={OPTIMIZER_STRATEGIES.CHIMNEY_INTERLOCKED}>
+                                    Industry Standard Chimney Interlocking Packer
+                                </option>
+                                <option value={OPTIMIZER_STRATEGIES.HIGH_VOLUME_TOPOGRAPHIC}>
+                                    High Volume Topographic
+                                </option>
+                                <option value={OPTIMIZER_STRATEGIES.COLUMNAR_PRISM}>
+                                    Columnar Prism EMS
+                                </option>
                                 <option value={OPTIMIZER_STRATEGIES.HORIZONTAL_GUILLOTINE}>
                                     Horizontal 2D Guillotine
                                 </option>
@@ -1296,8 +1305,8 @@ export default function App() {
                                     {t(lang, 'exp_cust')}
                                 </button>
 
-                                <button type="button" onClick={() => generateWarehouseGuidePDF({ palletData: packedData.pallets[selectedPalletIdx], palletIndex: selectedPalletIdx, totalPallets: packedData.totalPallets, palletSpec: PALLET_SPECS[palletType], lang, unit })} className="btn-add" style={{ width: '100%', marginTop: '6px', backgroundColor: '#0f172a', border: '1px solid #334155', color: '#38bdf8', fontWeight: 'bold' }}>
-                                    {t(lang, 'exp_wh')}
+                                <button type="button" onClick={() => generateLogisticsSpecPDF({ palletData: packedData.pallets[selectedPalletIdx], palletIndex: selectedPalletIdx, totalPallets: packedData.totalPallets, palletSpec: PALLET_SPECS[palletType], lang, unit })} className="btn-add" style={{ width: '100%', marginTop: '6px', backgroundColor: '#0f172a', border: '1px solid #334155', color: '#38bdf8', fontWeight: 'bold' }}>
+                                    {lang === 'el' ? 'Εξαγωγή Προδιαγραφών Μεταφοράς (PDF)' : 'Export Logistics Spec (PDF)'}
                                 </button>
                             </div>
                         )}

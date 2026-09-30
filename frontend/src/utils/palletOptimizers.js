@@ -9,6 +9,9 @@ import { packUniformBlock } from "./optimizers/uniformBlockOptimizer.js";
 import { packAdvanced3DGuillotine } from "./optimizers/packAdvanced3DGuillotine.js";
 import {packAdvancedWallBuildingGRASP} from "./optimizers/packAdvancedWallBuildingGRASP.js";
 import {packHorizontalLayerGuillotine} from "./optimizers/packHorizontalLayerGuillotine.js";
+import {packHighVolumeTopographic} from "./optimizers/packHighVolumeTopographic.js";
+import {packChimneyInterlockingEngine} from "./optimizers/packChimneyInterlockingEngine.js";
+import {packLevelFirstBlockEMS} from "./optimizers/packColumnarPrismEMS.js";
 
 export const OPTIMIZER_STRATEGIES = {
     EXTREME_POINT: 'extremePoint',
@@ -21,13 +24,23 @@ export const OPTIMIZER_STRATEGIES = {
     UNIFORM_BLOCK: 'uniformBlock',
     MAXIMAL_GUILLOTINE: 'maxGuillotine',
     WALL_BUILDING_GRASP: 'wallGRASP',
-    HORIZONTAL_GUILLOTINE: '2DGuillotine'
+    HORIZONTAL_GUILLOTINE: '2DGuillotine',
+    COLUMNAR_PRISM: 'columnarPrism',
+    HIGH_VOLUME_TOPOGRAPHIC: 'highTopographic',
+    CHIMNEY_INTERLOCKED: 'chimneyInterlocked'
 };
 
 export function runPalletOptimization(strategy, cargoList, palletSpec, maxHeight, overhangX = 0, overhangY = 0, minSupportFraction = 0.75) {
     switch (strategy) {
+        case OPTIMIZER_STRATEGIES.CHIMNEY_INTERLOCKED:
+            return packChimneyInterlockingEngine(cargoList, palletSpec, maxHeight, overhangX, overhangY);
+        case OPTIMIZER_STRATEGIES.HIGH_VOLUME_TOPOGRAPHIC:
+            return packHighVolumeTopographic(cargoList, palletSpec, maxHeight, overhangX, overhangY);
+        case OPTIMIZER_STRATEGIES.COLUMNAR_PRISM:
+            return packLevelFirstBlockEMS(cargoList, palletSpec, maxHeight, overhangX, overhangY,);
+
         case OPTIMIZER_STRATEGIES.TIER_INTERLOCKED:
-            return packTierInterlocked(cargoList, palletSpec, maxHeight, overhangX, overhangY, minSupportFraction);
+            return packTierInterlocked(cargoList, palletSpec, maxHeight, overhangX, overhangY);
 
         case OPTIMIZER_STRATEGIES.WALL_BLOCK:
             return packSequentialWallBlock(cargoList, palletSpec, maxHeight, overhangX, overhangY, minSupportFraction);
